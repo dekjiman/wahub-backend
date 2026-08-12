@@ -1,0 +1,4 @@
+CREATE DATABASE evolution;
+CREATE DATABASE wahub_n8n;
+CREATE DATABASE evogo_auth;
+CREATE DATABASE evogo_users;

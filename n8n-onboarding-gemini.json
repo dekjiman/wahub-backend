@@ -1,0 +1,199 @@
+{
+  "name": "Wahub - Onboarding Member Baru (Gemini)",
+  "nodes": [
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{$json.body.member.phone}}",
+        "options": {
+          "systemMessage": "=Tolong buatkan pesan sambutan ramah untuk member baru di komunitas kami.\nNama Grup: {{$json.body.group.name}}\nNomor Member: {{$json.body.member.phone}}\n\nBuat pesan yang ramah, singkat, santai, dan menggunakan emoji. Berikan sambutan yang hangat. Jangan terlalu panjang. (Jangan pakai markdown tebal atau bintang, cukup teks biasa)."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        2912,
+        864
+      ],
+      "id": "50f3cd1c-b538-4b80-be07-7cae3902aecd",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        2912,
+        1040
+      ],
+      "id": "4e23e846-a559-4b82-8efb-96fbda916ebc",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "dr1Fz5657TncepDQ",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "onboarding-new-member",
+        "options": {}
+      },
+      "id": "a7f5c892-66a3-4752-836f-8094fdf13555",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        2672,
+        864
+      ],
+      "webhookId": "onboarding-new-member"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "number",
+              "value": "={{ $node[\"Webhook\"].json.body.group.jid }}",
+              "type": "string"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.output ?? $json.text ?? '' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "eece50bf-4b13-40d2-938d-280fda0951f4",
+      "name": "Edit Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3264,
+        1152
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://evolution-api:8080/send/text?instance=wahub-main",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "wahub-evolution-api-key-2026"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"number\": $json.number, \"text\": $json.text } }}",
+        "options": {}
+      },
+      "id": "bf6bd753-ebed-4690-8029-9913bf0ec42c",
+      "name": "Kirim ke WhatsApp (Evolution Go)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        3504,
+        1152
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const number = String($json.number ?? '').trim();\nconst text = String($json.text ?? '').trim();\n\nif (!number) {\n  throw new Error('Nomor/JID group kosong. Cek Webhook body.group.jid');\n}\n\nif (!text) {\n  throw new Error('Teks pesan kosong. Cek output node AI Agent; hasil AI biasanya tersedia pada field output.');\n}\n\nreturn [{\n  json: {\n    number,\n    text\n  }\n}];"
+      },
+      "id": "7f64907a-55c8-49d7-8be4-9492429ef2e2",
+      "name": "Validasi Pesan WhatsApp",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3384,
+        1152
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Validasi Pesan WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validasi Pesan WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Kirim ke WhatsApp (Evolution Go)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "ec1cbe7f-5416-41f4-b63d-f3958c466dd6",
+  "meta": {
+    "instanceId": "e58dd665e88be6f354c593536b89109a9a9812b1d59828201bb5fee892c592ce"
+  },
+  "nodeGroups": [],
+  "id": "DZTi2LqUjabEkrUY",
+  "tags": []
+}

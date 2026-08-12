@@ -1,0 +1,25 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const communities_controller_js_1 = require("./communities.controller.js");
+const auth_middleware_js_1 = require("../../middleware/auth.middleware.js");
+const permission_middleware_js_1 = require("../../middleware/permission.middleware.js");
+const validate_middleware_js_1 = require("../../middleware/validate.middleware.js");
+const communities_schema_js_1 = require("./communities.schema.js");
+const audit_middleware_js_1 = require("../../middleware/audit.middleware.js");
+const router = (0, express_1.Router)();
+router.use(auth_middleware_js_1.authenticateJwt);
+router.get('/', (0, permission_middleware_js_1.requirePermission)('community.view'), communities_controller_js_1.CommunitiesController.list);
+router.post('/', (0, permission_middleware_js_1.requirePermission)('community.create'), (0, validate_middleware_js_1.validateRequest)(communities_schema_js_1.createCommunitySchema), (0, audit_middleware_js_1.auditLog)('create', 'community'), communities_controller_js_1.CommunitiesController.create);
+router.post('/sync', (0, permission_middleware_js_1.requirePermission)('community.edit'), (0, validate_middleware_js_1.validateRequest)(communities_schema_js_1.syncFromWhatsAppSchema), (0, audit_middleware_js_1.auditLog)('sync', 'community'), communities_controller_js_1.CommunitiesController.syncFromWhatsApp);
+router.get('/:id', (0, permission_middleware_js_1.requirePermission)('community.view'), communities_controller_js_1.CommunitiesController.getById);
+router.patch('/:id', (0, permission_middleware_js_1.requirePermission)('community.edit'), (0, validate_middleware_js_1.validateRequest)(communities_schema_js_1.updateCommunitySchema), (0, audit_middleware_js_1.auditLog)('update', 'community'), communities_controller_js_1.CommunitiesController.update);
+router.delete('/:id', (0, permission_middleware_js_1.requirePermission)('community.delete'), (0, audit_middleware_js_1.auditLog)('delete', 'community'), communities_controller_js_1.CommunitiesController.delete);
+router.get('/:id/groups', (0, permission_middleware_js_1.requirePermission)('group.view'), communities_controller_js_1.CommunitiesController.getGroups);
+// WhatsApp Community sync endpoints (Evolution Go)
+router.post('/:id/sync', (0, permission_middleware_js_1.requirePermission)('community.edit'), (0, validate_middleware_js_1.validateRequest)(communities_schema_js_1.syncCommunitySchema), (0, audit_middleware_js_1.auditLog)('sync', 'community'), communities_controller_js_1.CommunitiesController.syncToWhatsApp);
+router.post('/:id/add-groups', (0, permission_middleware_js_1.requirePermission)('community.edit'), (0, validate_middleware_js_1.validateRequest)(communities_schema_js_1.addGroupsToCommunitySchema), (0, audit_middleware_js_1.auditLog)('update', 'community'), communities_controller_js_1.CommunitiesController.addGroupsToWhatsApp);
+router.post('/:id/remove-groups', (0, permission_middleware_js_1.requirePermission)('community.edit'), (0, validate_middleware_js_1.validateRequest)(communities_schema_js_1.removeGroupsFromCommunitySchema), (0, audit_middleware_js_1.auditLog)('update', 'community'), communities_controller_js_1.CommunitiesController.removeGroupsFromWhatsApp);
+router.get('/whatsapp/list', (0, permission_middleware_js_1.requirePermission)('community.view'), communities_controller_js_1.CommunitiesController.fetchFromWhatsApp);
+router.get('/whatsapp/:communityJid', (0, permission_middleware_js_1.requirePermission)('community.view'), communities_controller_js_1.CommunitiesController.getWhatsAppInfo);
+exports.default = router;

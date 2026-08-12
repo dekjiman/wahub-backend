@@ -1,0 +1,169 @@
+{
+  "name": "Member Onboarding Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "onboarding-new-member",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-1",
+      "name": "Webhook (Member Joined)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.body.group.autoWelcome }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "if-1",
+      "name": "Is Auto Welcome Enabled?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "queryAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"contents\": [\n    {\n      \"parts\": [\n        {\n          \"text\": \"Anda adalah asisten komunitas yang ramah dan profesional. Tolong buatkan pesan sambutan (maksimal 2-3 kalimat) untuk member baru bernama '{{ $json.body.member.name }}' yang baru saja bergabung ke grup '{{ $json.body.group.name }}'. Pastikan pesannya memintanya untuk membaca peraturan grup.\"\n        }\n      ]\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "gemini-1",
+      "name": "Google Gemini (Generate Welcome)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        700,
+        150
+      ],
+      "credentials": {
+        "queryAuth": {
+          "id": "gemini-api-key",
+          "name": "Gemini API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://evolution-api:8080/message/sendText/{{ $('Webhook (Member Joined)').item.json.body.instanceName }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"number\": \"{{ $('Webhook (Member Joined)').item.json.body.group.jid }}\",\n  \"text\": \"{{ $json.candidates[0].content.parts[0].text || 'Selamat datang!' }}\",\n  \"delay\": 1500\n}",
+        "options": {}
+      },
+      "id": "http-send-wa",
+      "name": "Send WhatsApp via Evolution",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        950,
+        150
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "evo-credential-id",
+          "name": "Evolution API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://host.docker.internal:3000/api/internal/workflow-runs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"workflowName\": \"Member Onboarding\",\n  \"status\": \"success\",\n  \"details\": \"Onboarding sent to {{ $('Webhook (Member Joined)').item.json.body.member.name }}\"\n}",
+        "options": {}
+      },
+      "id": "http-log",
+      "name": "Log to Backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        150
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "backend-credential-id",
+          "name": "Backend Internal API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook (Member Joined)": {
+      "main": [
+        [
+          {
+            "node": "Is Auto Welcome Enabled?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Auto Welcome Enabled?": {
+      "main": [
+        [
+          {
+            "node": "Google Gemini (Generate Welcome)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini (Generate Welcome)": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp via Evolution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WhatsApp via Evolution": {
+      "main": [
+        [
+          {
+            "node": "Log to Backend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

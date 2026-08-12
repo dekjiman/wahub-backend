@@ -1,0 +1,16 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const admins_controller_js_1 = require("./admins.controller.js");
+const auth_middleware_js_1 = require("../../middleware/auth.middleware.js");
+const permission_middleware_js_1 = require("../../middleware/permission.middleware.js");
+const validate_middleware_js_1 = require("../../middleware/validate.middleware.js");
+const admins_schema_js_1 = require("./admins.schema.js");
+const audit_middleware_js_1 = require("../../middleware/audit.middleware.js");
+const router = (0, express_1.Router)();
+router.use(auth_middleware_js_1.authenticateJwt);
+router.get('/', (0, permission_middleware_js_1.requirePermission)('admin.view'), admins_controller_js_1.AdminsController.list);
+router.post('/', (0, permission_middleware_js_1.requirePermission)('admin.create'), (0, validate_middleware_js_1.validateRequest)(admins_schema_js_1.createAdminSchema), (0, audit_middleware_js_1.auditLog)('create', 'admin'), admins_controller_js_1.AdminsController.create);
+router.patch('/:id', (0, permission_middleware_js_1.requirePermission)('admin.edit'), (0, validate_middleware_js_1.validateRequest)(admins_schema_js_1.updateAdminSchema), (0, audit_middleware_js_1.auditLog)('update', 'admin'), admins_controller_js_1.AdminsController.update);
+router.delete('/:id', (0, permission_middleware_js_1.requirePermission)('admin.delete'), (0, audit_middleware_js_1.auditLog)('delete', 'admin'), admins_controller_js_1.AdminsController.delete);
+exports.default = router;

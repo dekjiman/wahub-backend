@@ -1,0 +1,12 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const workflows_controller_js_1 = require("./workflows.controller.js");
+const auth_middleware_js_1 = require("../../middleware/auth.middleware.js");
+const permission_middleware_js_1 = require("../../middleware/permission.middleware.js");
+const audit_middleware_js_1 = require("../../middleware/audit.middleware.js");
+const router = (0, express_1.Router)();
+router.use(auth_middleware_js_1.authenticateJwt);
+router.get('/', (0, permission_middleware_js_1.requirePermission)('settings.view'), workflows_controller_js_1.WorkflowsController.list);
+router.post('/:id/retry', (0, permission_middleware_js_1.requirePermission)('settings.edit'), (0, audit_middleware_js_1.auditLog)('retry', 'workflow_run'), workflows_controller_js_1.WorkflowsController.retry);
+exports.default = router;
