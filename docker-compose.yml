@@ -1,6 +1,7 @@
 services:
   postgres:
     image: postgres:15-alpine
+    restart: always
     ports:
       - "127.0.0.1:5432:5432"
     environment:
@@ -9,12 +10,17 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U wahub -d wahub"]
       interval: 5s
       timeout: 5s
       retries: 5
+    command: >
+      sh -c "
+        mkdir -p /docker-entrypoint-initdb.d &&
+        echo 'CREATE DATABASE evolution; CREATE DATABASE wahub_n8n; CREATE DATABASE evogo_auth; CREATE DATABASE evogo_users;' > /docker-entrypoint-initdb.d/01-init.sql &&
+        exec docker-entrypoint.sh postgres
+      "
 
   redis:
     image: redis:7-alpine
