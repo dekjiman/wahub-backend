@@ -7,6 +7,7 @@ import {
   moderationAlerts,
   aiAnalyses,
   integrations,
+  communities,
 } from '../../drizzle/schema.js';
 import { eq, sql } from 'drizzle-orm';
 import { AiService } from './ai.service.js';

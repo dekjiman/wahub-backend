@@ -2,11 +2,11 @@
   "name": "wahub-backend",
   "version": "1.0.0",
   "description": "Backend REST API for Limestone Hub WhatsApp Admin Dashboard",
-  "main": "dist/server.js",
+  "main": "dist/src/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
-    "start": "node dist/server.js",
+    "start": "node dist/src/server.js",
     "db:generate": "drizzle-kit generate",
     "db:push": "tsx drizzle/migrate.ts",
     "db:studio": "drizzle-kit studio",

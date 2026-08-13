@@ -23,4 +23,4 @@ COPY --from=builder /app/drizzle.config.ts ./drizzle.config.ts
 
 EXPOSE 3000
 
-CMD ["sh", "-c", "npx drizzle-kit push && node dist/src/server.js"]
+CMD ["sh", "-c", "npx drizzle-kit push && node dist/src/scripts/bootstrap-admin.js && node dist/src/server.js"]
