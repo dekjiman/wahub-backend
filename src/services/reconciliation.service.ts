@@ -68,7 +68,7 @@ export class ReconciliationService {
 
       const durationMs = Date.now() - startTime;
       logger.info(
-        `[reconciliation] Reconciliation completed in ${durationMs}ms for ${activeGroups.length} groups.`
+        `[reconciliation] Reconciliation completed in ${durationMs}ms for ${activeGroups.length} groups, participantSyncs=${participantSyncCount}.`
       );
 
       return {

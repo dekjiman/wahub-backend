@@ -70,6 +70,7 @@ export class EvolutionService {
       body: JSON.stringify({
         phone: '',
         ...(webhookUrl ? { webhookUrl } : {}),
+        subscribe: ['MESSAGE', 'GROUP', 'CONNECTION'],
       }),
     });
   }

@@ -249,7 +249,7 @@ export class GroupsService {
   // are marked inactive (status='inactive', left_at set) instead of deleted.
   static async syncParticipants(groupId: string, instanceName: string) {
     const [group] = await db
-      .select({ id: groups.id, whatsappGroupJid: groups.whatsappGroupJid })
+      .select({ id: groups.id, whatsappGroupJid: groups.whatsappGroupJid, name: groups.name })
       .from(groups)
       .where(eq(groups.id, groupId))
       .limit(1);
@@ -262,6 +262,8 @@ export class GroupsService {
       group.whatsappGroupJid
     )) as any;
     const participants: any[] = Array.isArray(info?.Participants) ? info.Participants : [];
+
+    logger.info(`[sync] syncParticipants: group="${group.name}" jid=${group.whatsappGroupJid} participants=${participants.length}`);
 
     const created: string[] = [];
     const updated: string[] = [];
@@ -406,6 +408,7 @@ export class GroupsService {
     }
 
     if (isNewJoined) {
+      logger.info(`[sync] New member detected in group ${groupId}: memberId=${memberId}, triggering n8n...`);
       // Trigger n8n Onboarding Workflow for newly polled members
       const { env } = await import('../../config/env.js');
       if (env.N8N_WEBHOOK_URL) {
@@ -413,25 +416,33 @@ export class GroupsService {
           const group = await db.query.groups.findFirst({ where: eq(groups.id, groupId) });
           const member = await db.query.members.findFirst({ where: eq(members.id, memberId) });
           if (group && member && group.autoWelcome && group.groupType !== 'announcement') {
-            fetch(env.N8N_WEBHOOK_URL, {
+            logger.info(`[sync] Sending to n8n: group="${group.name}" member="${member.displayName || member.whatsappNumber}"`);
+            const response = await fetch(env.N8N_WEBHOOK_URL, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 event: 'participant.joined',
-                instanceName: 'wahub-main',
+                instanceName: env.EVOLUTION_DEFAULT_INSTANCE || 'wahub-main',
                 group: {
                   id: group.id,
                   name: group.name,
                   jid: group.whatsappGroupJid,
                   autoWelcome: group.autoWelcome,
+                  rules: group.description || '',
                 },
                 member: {
                   id: member.id,
                   phone: member.whatsappNumber,
                   name: member.displayName || member.whatsappNumber,
+                  onboardingStatus: member.onboardingStatus || 'pending',
                 },
               }),
-            }).catch((err) => logger.error('Failed to trigger n8n webhook from sync', err));
+            });
+            if (response.ok) {
+              logger.info(`[sync] n8n webhook triggered successfully from sync`);
+            } else {
+              logger.error(`[sync] n8n webhook responded with status ${response.status} from sync`);
+            }
           }
         } catch (err) {
           logger.error('Failed to trigger n8n webhook from sync', err);
@@ -582,55 +593,41 @@ export class GroupsService {
         .limit(1);
 
       if (existing[0]) {
+        // Only update if group is already active; don't reactivate inactive ones
+        const currentGroup = await db
+          .select({ status: groups.status })
+          .from(groups)
+          .where(eq(groups.id, existing[0].id))
+          .limit(1);
+
+        if (currentGroup[0]?.status === 'inactive') {
+          logger.info(`[sync] Skipping inactive group "${name}" (${jid}) — not reactivating`);
+          continue;
+        }
+
+        // Only sync name, description, and communityId — never change status via reconciliation
+        // Status should only be changed by admin action
         await db
           .update(groups)
           .set({
             name,
             description,
             communityId,
-            status: isActive ? 'active' : 'inactive',
             updatedAt: new Date(),
           })
           .where(eq(groups.id, existing[0].id));
         updated.push(jid);
       } else {
-        await db.insert(groups).values({
-          whatsappGroupJid: jid,
-          name,
-          description,
-          communityId,
-          status: isActive ? 'active' : 'inactive',
-        });
-        created.push(jid);
+        // Auto-create disabled: groups must be created manually or via community setup
+        logger.info(`[sync] Skipping group "${name}" (${jid}) — not found in DB, auto-create disabled`);
       }
 
       if (communityId) linked.push(jid);
     }
 
-    const activeSet = new Set(activeJids);
-    let deactivated = 0;
-    const dbGroups = await db
-      .select({
-        id: groups.id,
-        whatsappGroupJid: groups.whatsappGroupJid,
-        status: groups.status,
-      })
-      .from(groups);
-
-    for (const row of dbGroups) {
-      if (
-        row.whatsappGroupJid &&
-        /@g\.us$/.test(row.whatsappGroupJid) &&
-        !activeSet.has(row.whatsappGroupJid) &&
-        row.status !== 'inactive'
-      ) {
-        await db
-          .update(groups)
-          .set({ status: 'inactive', updatedAt: new Date() })
-          .where(eq(groups.id, row.id));
-        deactivated++;
-      }
-    }
+    // Automatic deactivation disabled: reconciliation cron should never change group status to inactive.
+    // Status can only be changed manually by admin.
+    const deactivated = 0;
 
     return {
       instance: instanceName,

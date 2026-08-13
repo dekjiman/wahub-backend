@@ -1,0 +1,88 @@
+{
+  "name": "Wahub - Incoming Group Message (Log & Analisis AI)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "incoming-group-message",
+        "options": {}
+      },
+      "id": "1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [100, 300],
+      "webhookId": "incoming-group-message"
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "generate",
+        "model": "gemini-1.5-flash",
+        "prompt": "=Lakukan analisis dan rangkuman singkat untuk pesan masuk berikut:\nNama Grup: {{$json.body.group.name}}\nPengirim: {{$json.body.member.name}} ({{$json.body.member.phone}})\nPesan: \"{{$json.body.message.text}}\"\n\nBerikan rangkuman topik, sentimen (Positif/Netral/Negatif), dan apakah pesan ini memerlukan respon admin. (Jangan pakai markdown tebal atau bintang, cukup teks biasa)",
+        "options": {}
+      },
+      "id": "2",
+      "name": "Google Gemini (Analisis AI)",
+      "type": "n8n-nodes-base.googleGemini",
+      "typeVersion": 1,
+      "position": [340, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://wahub-backend:3000/api/internal/workflow-runs",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-internal-api-key",
+              "value": "wahub-internal-secret-key-2026"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ \"name\": \"Incoming Group Message Analysis\", \"trigger_type\": \"incoming_message\", \"status\": \"completed\", \"input_data\": { \"group\": $('Webhook').item.json.body.group, \"member\": $('Webhook').item.json.body.member, \"message\": $('Webhook').item.json.body.message }, \"output_data\": { \"analysis\": $json.text } }) }}",
+        "options": {}
+      },
+      "id": "3",
+      "name": "Simpan Log ke Wahub Backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [580, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Google Gemini (Analisis AI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini (Analisis AI)": {
+      "main": [
+        [
+          {
+            "node": "Simpan Log ke Wahub Backend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

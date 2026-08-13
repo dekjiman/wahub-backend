@@ -80,6 +80,7 @@ export const members = pgTable('members', {
   avatarUrl: text('avatar_url'),
   status: varchar('status', { length: 20 }).default('active'),
   warningCount: integer('warning_count').default(0),
+  onboardingStatus: varchar('onboarding_status', { length: 20 }).default('pending'),
   joinedAt: timestamp('joined_at').defaultNow(),
   lastActiveAt: timestamp('last_active_at'),
   createdAt: timestamp('created_at').defaultNow(),

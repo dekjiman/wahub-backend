@@ -30,5 +30,6 @@ export const env = {
   FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:5173',
   N8N_INTERNAL_TOKEN: process.env.N8N_INTERNAL_TOKEN || 'wahub-n8n-internal-token-2026',
   N8N_WEBHOOK_URL: process.env.N8N_WEBHOOK_URL || '',
+  N8N_INCOMING_MESSAGE_URL: process.env.N8N_INCOMING_MESSAGE_URL || '',
 };
 

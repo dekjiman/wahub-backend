@@ -37,6 +37,7 @@ services:
       POSTGRES_AUTH_DB: postgresql://wahub:${DB_PASSWORD:-password}@postgres:5432/evogo_auth?sslmode=disable
       POSTGRES_USERS_DB: postgresql://wahub:${DB_PASSWORD:-password}@postgres:5432/evogo_users?sslmode=disable
       DATABASE_SAVE_MESSAGES: "true"
+      # WEBHOOK_URL removed — per-instance webhookUrl is set via connect API to avoid duplicate delivery
       WADEBUG: INFO
       LOGTYPE: console
       CONNECT_ON_STARTUP: "true"
@@ -66,6 +67,7 @@ services:
       EVOLUTION_WEBHOOK_URL: ${EVOLUTION_WEBHOOK_URL:-http://wahub-backend:3000/webhook/evolution}
       N8N_URL: http://n8n:5678
       N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL:-http://n8n:5678/webhook/onboarding-new-member}
+      N8N_INCOMING_MESSAGE_URL: http://n8n:5678/webhook/incoming-message-v2
     depends_on:
       postgres:
         condition: service_healthy

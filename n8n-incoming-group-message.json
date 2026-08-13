@@ -1,0 +1,672 @@
+{
+  "name": "Wahub - Incoming Group Message (Moderasi & Eskalasi) - PARSE FIXED",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "incoming-group-message",
+        "options": {}
+      },
+      "id": "208db216-900a-461e-942e-7dd1847e66a5",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "incoming-group-message"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "body",
+              "name": "body",
+              "value": "={{ $('Webhook').item.json.body }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "da89ae9c-1807-465d-894b-24276c005cc7",
+      "name": "Edit Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        176,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ Edit Fields.item.json.body.message.conversation }}",
+        "options": {
+          "systemMessage": "Anda adalah sistem AI keamanan dan moderasi tingkat lanjut. Analisis pesan WhatsApp dari grup dan berikan output JSON.\n\nKONTEKS DATA:\n- group: { id, name, jid, rules }\n- member: { id, phone, name, onboardingStatus }\n- message: { conversation, from, fromMe, pushName, groupId, groupName }\n\nANALISIS:\n1. Spam/Fraud: phishing, promosi berlebihan, tautan berbahaya\n2. Konten Tidak Pantas: hate speech, pelecehan, bahasa kasar\n3. Ancaman: ancaman fisik, pemerasan, intimidasi\n4. Prioritas: Low/Medium/High/Urgent\n5. Aksi: ALLOW (normal), FLAG_REVIEW (curiga), BLOCK (pelanggaran), ESCALATE (serius)\n\nATURAN:\n- Pesan normal = ALLOW\n- Curiga tapi belum parah = FLAG_REVIEW\n- Spam/konten pantas = BLOCK\n- Ancaman serius/fraud berat = ESCALATE\n\nOUTPUT JSON:\n{\"analysis\":{\"is_spam_or_fraud\":bool,\"is_inappropriate\":bool,\"is_threat\":bool,\"confidence_score\":float,\"reasoning\":\"string\"},\"priority\":\"Low|Medium|High|Urgent\",\"recommended_action\":\"ALLOW|BLOCK|FLAG_REVIEW|ESCALATE\",\"warning_message\":\"pesan peringatan Indonesia\",\"escalation_ticket\":{\"needs_escalation\":bool,\"department\":\"Security|Fraud|Content Moderation|Customer Support|None\",\"ticket_title\":\"string\",\"ticket_description\":\"string\"}}"
+        }
+      },
+      "id": "9c1919cc-ec50-4499-a126-8d21dde03cd7",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        352,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemma-4-26b-a4b-it",
+        "options": {}
+      },
+      "id": "846a8ddd-4400-4da6-a700-4fbfa8baa3cb",
+      "name": "Google Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        352,
+        208
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "dr1Fz5657TncepDQ",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Node mode: Run Once for Each Item\n// Pada mode ini gunakan $json untuk item AI Agent saat ini.\n// Jangan gunakan $input.first().\n\nconst aiOutput = String(\n  $json.output ??\n  $json.text ??\n  ''\n).trim();\n\nif (!aiOutput) {\n  throw new Error(\n    'AI Agent menghasilkan output kosong. Cek output node AI Agent sebelum Parse AI Response.'\n  );\n}\n\n// Bersihkan kemungkinan markdown code fence dari output model.\nlet cleaned = aiOutput\n  .replace(/^```(?:json)?\\s*/i, '')\n  .replace(/\\s*```$/i, '')\n  .trim();\n\nlet parsed;\n\ntry {\n  // Pilihan utama: AI mengembalikan JSON murni.\n  parsed = JSON.parse(cleaned);\n} catch (firstError) {\n  // Fallback: ambil object JSON pertama dari text tambahan model.\n  const start = cleaned.indexOf('{');\n  const end = cleaned.lastIndexOf('}');\n\n  if (start === -1 || end === -1 || end <= start) {\n    throw new Error(\n      'Tidak menemukan object JSON pada output AI. Output: ' +\n      cleaned.slice(0, 500)\n    );\n  }\n\n  const jsonCandidate = cleaned.slice(start, end + 1);\n\n  try {\n    parsed = JSON.parse(jsonCandidate);\n  } catch (secondError) {\n    throw new Error(\n      'Output AI bukan JSON valid. ' +\n      secondError.message +\n      ' | Output: ' +\n      jsonCandidate.slice(0, 500)\n    );\n  }\n}\n\n// Ambil context asli dari Webhook.\n// Karena workflow linear Webhook -> Edit Fields -> AI Agent -> Parse,\n// .item akan mengikuti linked item yang sama.\nconst wb = $('Webhook').item.json.body ?? {};\n\nconst defaults = {\n  analysis: {\n    is_spam_or_fraud: false,\n    is_inappropriate: false,\n    is_threat: false,\n    confidence_score: 0,\n    reasoning: ''\n  },\n  priority: 'Low',\n  recommended_action: 'ALLOW',\n  warning_message: '',\n  escalation_ticket: {\n    needs_escalation: false,\n    department: 'None',\n    ticket_title: '',\n    ticket_description: ''\n  }\n};\n\n// Merge nested object dengan aman.\nconst result = {\n  ...defaults,\n  ...parsed,\n  analysis: {\n    ...defaults.analysis,\n    ...(parsed.analysis ?? {})\n  },\n  escalation_ticket: {\n    ...defaults.escalation_ticket,\n    ...(parsed.escalation_ticket ?? {})\n  },\n  group: wb.group ?? {},\n  member: wb.member ?? {},\n  message: wb.message ?? {},\n  instanceName: wb.instanceName ?? 'wahub-main'\n};\n\n// Validasi output minimum agar Switch tidak salah routing.\nconst validActions = ['ALLOW', 'BLOCK', 'FLAG_REVIEW', 'ESCALATE'];\nif (!validActions.includes(result.recommended_action)) {\n  throw new Error(\n    `recommended_action tidak valid: ${result.recommended_action}`\n  );\n}\n\nreturn {\n  json: result\n};"
+      },
+      "id": "8b09495b-6b40-472f-ac58-d6818d777f6c",
+      "name": "Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.recommended_action }}",
+                    "rightValue": "BLOCK",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "BLOCK"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.recommended_action }}",
+                    "rightValue": "ESCALATE",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ESCALATE"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.recommended_action }}",
+                    "rightValue": "FLAG_REVIEW",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "FLAG_REVIEW"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "e8d23895-557b-43cd-9813-d55f0065460b",
+      "name": "Moderation Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://evolution-go:8080/send/text?instance={{ $json.instanceName }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "apikey",
+              "value": "wahub-evolution-api-key-2026"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ number: $json.group.jid, text: '⚠️ *PERINGATAN*\\n\\n' + ($json.warning_message || 'Pesan Anda melanggar ketentuan grup.') + '\\n\\nHarap perhatikan aturan yang berlaku.') }}",
+        "options": {}
+      },
+      "id": "f1000001-0001-4000-8000-000000000010",
+      "name": "Kirim Peringatan (BLOCK)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1120,
+        -208
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://evolution-go:8080/group/participant?instance={{ $json.instanceName }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "apikey",
+              "value": "wahub-evolution-api-key-2026"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ groupJid: $json.group.jid, action: 'remove', participants: [$json.member.phone + '@s.whatsapp.net'] }) }}",
+        "options": {}
+      },
+      "id": "f1000001-0001-4000-8000-000000000020",
+      "name": "Kick dari Grup (BLOCK)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1344,
+        -208
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://wahub-backend:3000/api/internal/moderation-alerts",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-internal-token",
+              "value": "wahub-n8n-internal-token-2026"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ group_id: $json.group.id, member_id: $json.member.id, alert_type: $json.analysis.is_spam_or_fraud ? 'spam' : ($json.analysis.is_inappropriate ? 'inappropriate' : 'threat'), severity: $json.priority === 'Urgent' ? 'critical' : ($json.priority === 'High' ? 'high' : 'medium'), description: $json.analysis.reasoning }) }}",
+        "options": {}
+      },
+      "id": "f1000001-0001-4000-8000-000000000030",
+      "name": "Log Moderation Alert (BLOCK)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1120,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://wahub-backend:3000/api/internal/member-warnings",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-internal-token",
+              "value": "wahub-n8n-internal-token-2026"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ member_id: $json.member.id, group_id: $json.group.id, violation_type: $json.analysis.is_spam_or_fraud ? 'spam' : ($json.analysis.is_inappropriate ? 'inappropriate' : 'threat'), reason: $json.analysis.reasoning }) }}",
+        "options": {}
+      },
+      "id": "f1000001-0001-4000-8000-000000000040",
+      "name": "Catat Warning (BLOCK)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1120,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://wahub-backend:3000/api/internal/escalations",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-internal-token",
+              "value": "wahub-n8n-internal-token-2026"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ title: $json.escalation_ticket.ticket_title || 'Escalation', description: $json.escalation_ticket.ticket_description || $json.analysis.reasoning, group_id: $json.group.id, member_id: $json.member.id, priority: $json.priority === 'Urgent' ? 'urgent' : ($json.priority === 'High' ? 'high' : 'medium') }) }}",
+        "options": {}
+      },
+      "id": "f1000001-0001-4000-8000-000000000050",
+      "name": "Buat Tiket Eskalasi",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1120,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=http://wahub-backend:3000/api/internal/admins/role/{{ $json.escalation_ticket.department === 'Security' || $json.escalation_ticket.department === 'Fraud' ? 'super_admin' : ($json.escalation_ticket.department === 'Content Moderation' ? 'area_manager' : 'support') }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-internal-token",
+              "value": "wahub-n8n-internal-token-2026"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f1000001-0001-4000-8000-000000000060",
+      "name": "Cari Admin Tujuan",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1344,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const d = $json.data || [];\nconst e = $('Buat Tiket Eskalasi').item.json;\nconst a = d.find(x => x.phone) || d[0];\nif (!a || !a.phone) return { json:{skip:true} };\nconst p = a.phone.replace(/[^0-9]/g,'');\nconst ph = p.startsWith('62') ? p : '62'+p;\nconst ai = $('Parse AI Response').item.json;\nreturn { json:{ skip:false, phone:ph+'@s.whatsapp.net', instanceName:ai.instanceName, message:'🚨 *ESKALASI*\\n\\n*Tiket:* '+(e.title||'Issue')+'\\n*Prioritas:* '+(e.priority||'Medium')+'\\n*Grup:* '+(ai.group.name||'')+'\\n*Member:* '+(ai.member.name||'')+'\\n*Alasan:* '+(ai.analysis.reasoning||'')+'\\n\\nSegera ditindaklanjuti.' } };"
+      },
+      "id": "f1000001-0001-4000-8000-000000000070",
+      "name": "Format DM Admin",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1568,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notEqual"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f1000001-0001-4000-8000-000000000080",
+      "name": "Admin Ada?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1792,
+        -400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://evolution-go:8080/send/text?instance={{ $json.instanceName }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "apikey",
+              "value": "wahub-evolution-api-key-2026"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ number: $json.phone, text: $json.message }) }}",
+        "options": {}
+      },
+      "id": "f1000001-0001-4000-8000-000000000090",
+      "name": "Kirim DM ke Admin",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        2000,
+        -496
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://wahub-backend:3000/api/internal/moderation-alerts",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-internal-token",
+              "value": "wahub-n8n-internal-token-2026"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ group_id: $json.group.id, member_id: $json.member.id, alert_type: 'suspicious', severity: 'medium', description: $json.analysis.reasoning + ' | FLAG_REVIEW' }) }}",
+        "options": {}
+      },
+      "id": "f1000001-0001-4000-8000-000000000100",
+      "name": "Log Moderation Alert (FLAG)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1120,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://evolution-go:8080/send/text?instance={{ $json.instanceName }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "apikey",
+              "value": "wahub-evolution-api-key-2026"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ number: $json.group.jid, text: '📋 Pesan Anda sedang ditinjau oleh admin. Terima kasih.' }) }}",
+        "options": {}
+      },
+      "id": "f1000001-0001-4000-8000-000000000110",
+      "name": "Notifikasi FLAG ke Grup",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1344,
+        400
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Response": {
+      "main": [
+        [
+          {
+            "node": "Moderation Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Moderation Switch": {
+      "main": [
+        [
+          {
+            "node": "Log Moderation Alert (BLOCK)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Catat Warning (BLOCK)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Kirim Peringatan (BLOCK)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Kick dari Grup (BLOCK)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Buat Tiket Eskalasi",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Moderation Alert (BLOCK)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Kirim Peringatan (BLOCK)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Moderation Alert (FLAG)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notifikasi FLAG ke Grup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buat Tiket Eskalasi": {
+      "main": [
+        [
+          {
+            "node": "Cari Admin Tujuan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cari Admin Tujuan": {
+      "main": [
+        [
+          {
+            "node": "Format DM Admin",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format DM Admin": {
+      "main": [
+        [
+          {
+            "node": "Admin Ada?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Admin Ada?": {
+      "main": [
+        [
+          {
+            "node": "Kirim DM ke Admin",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "b7e2c420-8253-4b70-90d7-9c2ab26435a8",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "e58dd665e88be6f354c593536b89109a9a9812b1d59828201bb5fee892c592ce"
+  },
+  "nodeGroups": [],
+  "id": "4qhP56q5FRSV7U1X",
+  "tags": []
+}

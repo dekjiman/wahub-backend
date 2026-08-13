@@ -365,57 +365,38 @@ export class CommunitiesService {
         .limit(1);
 
       if (existing[0]) {
+        // Only update if community is already active; don't reactivate inactive ones
+        const current = await db
+          .select({ status: communities.status })
+          .from(communities)
+          .where(eq(communities.id, existing[0].id))
+          .limit(1);
+
+        if (current[0]?.status === 'inactive') {
+          logger.info(`[sync] Skipping inactive community "${name}" (${jid}) — not reactivating`);
+          continue;
+        }
+
+        // Only sync name and description — never change status via reconciliation
+        // Status should only be changed by admin action
         await db
           .update(communities)
           .set({
             name,
             description,
-            status: isActive ? 'active' : 'inactive',
             updatedAt: new Date(),
           })
           .where(eq(communities.id, existing[0].id));
         updated.push(jid);
       } else {
-        await db.insert(communities).values({
-          name,
-          description,
-          whatsappCommunityId: jid,
-          status: isActive ? 'active' : 'inactive',
-        });
-        created.push(jid);
+        // Auto-create disabled: communities must be created manually via API
+        logger.info(`[sync] Skipping community "${name}" (${jid}) — not found in DB, auto-create disabled`);
       }
     }
 
-    const waJids = new Set(
-      waCommunities
-        .map((c) => c?.JID || c?.jid)
-        .filter((j): j is string => typeof j === 'string' && /@g\.us$/.test(j))
-    );
-
-    let deactivated = 0;
-    const dbSynced = await db
-      .select({
-        id: communities.id,
-        whatsappCommunityId: communities.whatsappCommunityId,
-        status: communities.status,
-      })
-      .from(communities)
-      .where(sql`${communities.whatsappCommunityId} IS NOT NULL`);
-
-    for (const row of dbSynced) {
-      if (
-        row.whatsappCommunityId &&
-        /@g\.us$/.test(row.whatsappCommunityId) &&
-        !waJids.has(row.whatsappCommunityId) &&
-        row.status !== 'inactive'
-      ) {
-        await db
-          .update(communities)
-          .set({ status: 'inactive', updatedAt: new Date() })
-          .where(eq(communities.id, row.id));
-        deactivated++;
-      }
-    }
+    // Automatic deactivation disabled: reconciliation cron should never change community status to inactive.
+    // Status can only be changed manually by admin.
+    const deactivated = 0;
 
     return {
       instance: instanceName,

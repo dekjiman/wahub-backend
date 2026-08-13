@@ -15,6 +15,44 @@ export class InternalController {
     return ApiResponse.success(res, event);
   }
 
+  static async listAdmins(req: Request, res: Response) {
+    try {
+      const result = await InternalService.listAdmins();
+      return ApiResponse.success(res, result);
+    } catch (error: any) {
+      return ApiResponse.error(res, { code: 'LIST_FAILED', message: error.message }, 500);
+    }
+  }
+
+  static async listAdminsByRole(req: Request, res: Response) {
+    try {
+      const result = await InternalService.listAdmins(req.params.role);
+      return ApiResponse.success(res, result);
+    } catch (error: any) {
+      return ApiResponse.error(res, { code: 'LIST_FAILED', message: error.message }, 500);
+    }
+  }
+
+  static async lookupMemberByPhone(req: Request, res: Response) {
+    try {
+      const result = await InternalService.lookupMemberByPhone(req.params.phone);
+      if (!result) return ApiResponse.error(res, { code: 'NOT_FOUND', message: 'Member not found' }, 404);
+      return ApiResponse.success(res, result);
+    } catch (error: any) {
+      return ApiResponse.error(res, { code: 'LOOKUP_FAILED', message: error.message }, 500);
+    }
+  }
+
+  static async lookupGroupByJid(req: Request, res: Response) {
+    try {
+      const result = await InternalService.lookupGroupByJid(req.params.jid);
+      if (!result) return ApiResponse.error(res, { code: 'NOT_FOUND', message: 'Group not found' }, 404);
+      return ApiResponse.success(res, result);
+    } catch (error: any) {
+      return ApiResponse.error(res, { code: 'LOOKUP_FAILED', message: error.message }, 500);
+    }
+  }
+
   static async createAiAnalysis(req: Request, res: Response) {
     try {
       const result = await InternalService.createAiAnalysis(req.body);
@@ -36,6 +74,19 @@ export class InternalController {
       return ApiResponse.error(
         res,
         { code: 'CREATE_FAILED', message: error.message || 'Failed to create moderation alert' },
+        400
+      );
+    }
+  }
+
+  static async createMemberWarning(req: Request, res: Response) {
+    try {
+      const result = await InternalService.createMemberWarning(req.body);
+      return ApiResponse.success(res, result, 201);
+    } catch (error: any) {
+      return ApiResponse.error(
+        res,
+        { code: 'CREATE_FAILED', message: error.message || 'Failed to create member warning' },
         400
       );
     }

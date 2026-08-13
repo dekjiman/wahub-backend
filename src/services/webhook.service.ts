@@ -114,19 +114,11 @@ export class WebhookService {
       where: eq(groups.whatsappGroupJid, remoteJid),
     });
 
-    if (!group && remoteJid.endsWith('@g.us')) {
-      const [newGroup] = await db
-        .insert(groups)
-        .values({
-          whatsappGroupJid: remoteJid,
-          name: pushName || 'WhatsApp Group',
-        })
-        .onConflictDoNothing()
-        .returning();
-
-      group = newGroup || (await db.query.groups.findFirst({
-        where: eq(groups.whatsappGroupJid, remoteJid),
-      }));
+    if (remoteJid.endsWith('@g.us')) {
+      if (!group || group.status !== 'active') {
+        logger.info(`[webhook] Skipping message from unregistered/inactive group ${remoteJid}`);
+        return;
+      }
     }
 
     // Ensure member is in groupMembers relation
@@ -256,7 +248,7 @@ export class WebhookService {
       }
     }
 
-    if (!group) return;
+    if (!group || group.status !== 'active') return;
 
     let member = await db.query.members.findFirst({
       where: eq(members.whatsappNumber, participantPhone),

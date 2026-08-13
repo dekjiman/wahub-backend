@@ -271,41 +271,29 @@ export class WebhooksService {
       }
     }
 
-    // Upsert group
+    // Check if group is registered and active
     let groupId: string | null = null;
+    let targetGroup: any = null;
     if (isGroup && chatJid) {
-      let group = await db.query.groups.findFirst({
+      targetGroup = await db.query.groups.findFirst({
         where: eq(groups.whatsappGroupJid, chatJid),
       });
 
-      if (!group) {
-        const [newGroup] = await db
-          .insert(groups)
-          .values({
-            whatsappGroupJid: chatJid,
-            name: pushName && pushName !== 'WhatsApp User' ? pushName : 'WhatsApp Group',
-          })
-          .onConflictDoNothing()
-          .returning();
-
-        group =
-          newGroup ||
-          (await db.query.groups.findFirst({
-            where: eq(groups.whatsappGroupJid, chatJid),
-          }));
-      } else {
-        await db
-          .update(groups)
-          .set({
-            messageCountToday: sql`${groups.messageCountToday} + 1`,
-            updatedAt: new Date(),
-          })
-          .where(eq(groups.id, group.id));
+      // Ignore unregistered or inactive groups
+      if (!targetGroup || targetGroup.status !== 'active') {
+        logger.info(`[webhook] Ignoring message from unregistered/inactive group: ${chatJid}`);
+        return null;
       }
 
-      if (group) {
-        groupId = group.id;
-      }
+      await db
+        .update(groups)
+        .set({
+          messageCountToday: sql`${groups.messageCountToday} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(eq(groups.id, targetGroup.id));
+
+      groupId = targetGroup.id;
     }
 
     // Ensure groupMembers relation
@@ -341,13 +329,6 @@ export class WebhooksService {
     );
 
     // TASK-014: AI Cost Control Pre-filter
-    let targetGroup = null;
-    if (groupId) {
-      targetGroup = await db.query.groups.findFirst({
-        where: eq(groups.id, groupId),
-      });
-    }
-
     const shouldRunAi =
       content &&
       content.trim().length >= 3 &&
@@ -481,24 +462,11 @@ export class WebhooksService {
       where: eq(groups.whatsappGroupJid, groupJid),
     });
 
-    if (!group && groupJid.endsWith('@g.us')) {
-      const [newGroup] = await db
-        .insert(groups)
-        .values({
-          whatsappGroupJid: groupJid,
-          name: data.pushName || 'WhatsApp Group',
-        })
-        .onConflictDoNothing()
-        .returning();
-
-      group =
-        newGroup ||
-        (await db.query.groups.findFirst({
-          where: eq(groups.whatsappGroupJid, groupJid),
-        }));
+    // Ignore unregistered or inactive groups
+    if (!group || group.status !== 'active') {
+      logger.info(`[webhook] Ignoring participant lifecycle from unregistered/inactive group: ${groupJid}`);
+      return;
     }
-
-    if (!group) return;
 
     for (const pJid of participantJids) {
       const phone = pJid.split('@')[0];

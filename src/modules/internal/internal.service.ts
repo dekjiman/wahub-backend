@@ -5,8 +5,12 @@ import {
   moderationAlerts,
   escalations,
   workflowRuns,
+  admins,
+  memberWarnings,
+  members,
+  groups,
 } from '../../../drizzle/schema.js';
-import { eq } from 'drizzle-orm';
+import { eq, sql, and } from 'drizzle-orm';
 import { env } from '../../config/env.js';
 
 export class InternalService {
@@ -133,7 +137,7 @@ export class InternalService {
 
   static async createWorkflowRun(data: {
     name: string;
-    trigger_type: string;
+    trigger_type?: string;
     status?: string;
     input_data?: any;
     output_data?: any;
@@ -144,7 +148,7 @@ export class InternalService {
       .insert(workflowRuns)
       .values({
         name: data.name,
-        triggerType: data.trigger_type,
+        triggerType: data.trigger_type || 'webhook',
         status: data.status || 'completed',
         inputData: data.input_data || null,
         outputData: data.output_data || null,
@@ -166,5 +170,80 @@ export class InternalService {
       started_at: row.startedAt ? row.startedAt.toISOString() : new Date().toISOString(),
       completed_at: row.completedAt ? row.completedAt.toISOString() : new Date().toISOString(),
     };
+  }
+
+  static async listAdmins(role?: string) {
+    const conditions = [eq(admins.status, 'active')];
+    if (role) conditions.push(sql`${admins.role} = ${role}`);
+
+    const rows = await db
+      .select({ id: admins.id, name: admins.name, email: admins.email, role: admins.role, phone: admins.phone, status: admins.status })
+      .from(admins)
+      .where(and(...conditions));
+
+    return rows.map((r: any) => ({
+      id: r.id,
+      name: r.name,
+      email: r.email,
+      role: r.role,
+      phone: r.phone,
+      status: r.status,
+    }));
+  }
+
+  static async createMemberWarning(data: {
+    member_id: string;
+    group_id?: string;
+    violation_type: string;
+    reason: string;
+    severity?: string;
+    issued_by?: string;
+  }) {
+    const [row] = await db
+      .insert(memberWarnings)
+      .values({
+        memberId: data.member_id,
+        groupId: data.group_id || null,
+        issuedBy: data.issued_by || null,
+        violationType: data.violation_type,
+        reason: data.reason,
+        severity: data.severity || 'warning',
+        status: 'active',
+      })
+      .returning();
+
+    await db
+      .update(members)
+      .set({ warningCount: sql`${members.warningCount} + 1`, updatedAt: new Date() })
+      .where(eq(members.id, data.member_id));
+
+    return {
+      id: row.id,
+      member_id: row.memberId,
+      group_id: row.groupId,
+      violation_type: row.violationType,
+      reason: row.reason,
+      severity: row.severity,
+      status: row.status,
+      created_at: row.createdAt ? row.createdAt.toISOString() : new Date().toISOString(),
+    };
+  }
+
+  static async lookupMemberByPhone(phone: string) {
+    const [row] = await db
+      .select({ id: members.id, whatsappNumber: members.whatsappNumber, displayName: members.displayName, warningCount: members.warningCount })
+      .from(members)
+      .where(eq(members.whatsappNumber, phone))
+      .limit(1);
+    return row || null;
+  }
+
+  static async lookupGroupByJid(jid: string) {
+    const [row] = await db
+      .select({ id: groups.id, name: groups.name, whatsappGroupJid: groups.whatsappGroupJid })
+      .from(groups)
+      .where(eq(groups.whatsappGroupJid, jid))
+      .limit(1);
+    return row || null;
   }
 }
