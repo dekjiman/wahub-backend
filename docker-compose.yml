@@ -66,7 +66,7 @@ services:
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-wahub-evolution-api-key-2026}
       JWT_SECRET: ${JWT_SECRET:-wahub-super-secret-jwt-key-change-in-production-2026}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+      FRONTEND_URL: ${FRONTEND_URL:-http://103.216.188.140:3003}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@wahub.com}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-password123}
       ADMIN_NAME: ${ADMIN_NAME:-Super Admin}

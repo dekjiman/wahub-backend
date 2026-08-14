@@ -88,6 +88,13 @@ v1Router.use('/internal', internalRoutes);
 
 app.use('/api/v1', v1Router);
 
+// 404 Handler (always return JSON, prevent HTML 404 pages)
+app.use((req, res) => {
+  return ApiResponse.error(res, {
+    code: 'NOT_FOUND',
+    message: `Route not found: ${req.method} ${req.path}`,
+  }, 404);
+});
 
 // Global Error Handler
 app.use(errorHandler);
